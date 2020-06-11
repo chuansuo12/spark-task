@@ -5,11 +5,11 @@ import java.time.LocalDate;
 public class UserArticleDateBehavior {
     private String uid;
 
-    private String aid;
+    private String domain;
 
     private String behavior;
 
-    private LocalDate date;
+    private LocalDate behaviorDate;
 
     private Integer counts;
 
@@ -21,12 +21,12 @@ public class UserArticleDateBehavior {
         this.uid = uid;
     }
 
-    public String getAid() {
-        return aid;
+    public String getDomain() {
+        return domain;
     }
 
-    public void setAid(String aid) {
-        this.aid = aid;
+    public void setDomain(String domain) {
+        this.domain = domain;
     }
 
     public String getBehavior() {
@@ -37,12 +37,12 @@ public class UserArticleDateBehavior {
         this.behavior = behavior;
     }
 
-    public LocalDate getDate() {
-        return date;
+    public LocalDate getBehaviorDate() {
+        return behaviorDate;
     }
 
-    public void setDate(LocalDate date) {
-        this.date = date;
+    public void setBehaviorDate(LocalDate behaviorDate) {
+        this.behaviorDate = behaviorDate;
     }
 
     public Integer getCounts() {
