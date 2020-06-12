@@ -2,6 +2,7 @@ package edu.big.data;
 
 import com.twitter.chill.Base64;
 import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.client.Result;
@@ -24,21 +25,23 @@ import org.apache.spark.sql.types.StructType;
 import scala.Tuple2;
 
 import java.io.IOException;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 
 public class GroupDataApp {
-    private static final byte[] CF_ARTICLE_INFO = Bytes.toBytes("article_info");
     private static final byte[] CF_BEHAVIOR = Bytes.toBytes("behavior");
-    private static final byte[] COLUMN_AID = Bytes.toBytes("aid");
     private static final byte[] COLUMN_TYPE = Bytes.toBytes("type");
     private static final String SEPARATOR = "_";
-    static final String JDBC_URL = "jdbc:mysql://172.17.0.1:3306/bigdata?serverTimezone=CTT&useUnicode=true&useSSL=false&&characterEncoding=utf8";
-
+    private static final String JDBC_URL = "jdbc:mysql://172.17.0.1:3306/bigdata?serverTimezone=CTT&useUnicode=true&useSSL=false&&characterEncoding=utf8";
+    private static final String MYSQL_USER = "root";
+    private static final String MYSQL_PASSWORD = "123456";
 
     public static void main(String[] args) throws IOException {
         SparkConf sparkConf = new SparkConf().setAppName("HBaseRead").setMaster("local[2]");
@@ -93,8 +96,8 @@ public class GroupDataApp {
 
     static Properties mysqlProperties() {
         Properties properties = new Properties();
-        properties.put("user", "root");
-        properties.put("password", "123456");
+        properties.put("user", MYSQL_USER);
+        properties.put("password", MYSQL_PASSWORD);
         properties.put("driver", "com.mysql.cj.jdbc.Driver");
         return properties;
     }
@@ -103,10 +106,18 @@ public class GroupDataApp {
             UserArticleDateBehavior, Integer> {
         static final GetUserBehavior INSTANCE = new GetUserBehavior();
         private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-        private static final HikariConfig HIKARI_CONFIG;
+        private static final HikariDataSource DATA_SOURCE = new HikariDataSource(hikariConfig());
+
+        static HikariConfig hikariConfig() {
+            HikariConfig config = new HikariConfig();
+            config.setUsername(MYSQL_USER);
+            config.setPassword(MYSQL_PASSWORD);
+            config.setJdbcUrl(JDBC_URL);
+            return config;
+        }
 
         @Override
-        public Tuple2<UserArticleDateBehavior, Integer> call(Tuple2<ImmutableBytesWritable, Result> triple) {
+        public Tuple2<UserArticleDateBehavior, Integer> call(Tuple2<ImmutableBytesWritable, Result> triple) throws SQLException {
             String behaviorType = this.getColumnValue(triple._2(), CF_BEHAVIOR, COLUMN_TYPE);
             String key = Bytes.toString(triple._2().getRow());
             UserArticleDateBehavior userArticleDateBehavior = new UserArticleDateBehavior();
@@ -114,11 +125,21 @@ public class GroupDataApp {
             userArticleDateBehavior.setBehavior(behaviorType);
             userArticleDateBehavior.setUid(values[0]);
             String aid = values[1];
-
-            LocalDateTime dateTime = LocalDateTime.ofEpochSecond(triple._2().current().getTimestamp(), 0, ZoneOffset.ofHours(8));
-            String key = aid + SEPARATOR + uid + SEPARATOR + behaviorType + SEPARATOR + dateTime.format(DATE_TIME_FORMATTER);
+            try (
+                    Connection connection = DATA_SOURCE.getConnection();
+                    PreparedStatement preparedStatement =
+                            connection.prepareStatement("select domain from article_info where aid = ?");
+            ) {
+                preparedStatement.setString(1, aid);
+                preparedStatement.execute();
+                ResultSet resultSet = preparedStatement.getResultSet();
+                String domain = resultSet.getString(1);
+                userArticleDateBehavior.setDomain(domain);
+            }
+            LocalDateTime behaviorTime = LocalDateTime.parse(values[2], DATE_TIME_FORMATTER);
+            userArticleDateBehavior.setBehaviorDate(behaviorTime.toLocalDate());
             return new Tuple2<>(userArticleDateBehavior, 1);
-            HIKARI_CONFIG.getDataSource().getConnection().prepareStatement();
+
         }
 
         private String getColumnValue(Result result, byte[] cf, byte[] column) {
